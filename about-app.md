@@ -341,5 +341,8 @@ Then we create `createPost` method that will called in when submiting the form. 
 Once this is completed you should be able to add data into the collection and it will be updated in the firestore database via their website.
 
 ![firestore-db-4](images/firestore-db-4.jpg)
+
 Here in website it shows results,
+
 ![firestore-db-5](images/firestore-db-5.jpg)
+
