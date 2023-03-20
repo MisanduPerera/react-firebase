@@ -10,6 +10,7 @@
   - [Configuring db in api](#configuring-db-in-api)
   - [Setting up form to enter data](#setting-up-form-to-enter-data)
   - [setting up writting database from form inputs](#setting-up-writting-database-from-form-inputs)
+  - [Displaying data from firebase](#displaying-data-from-firebase)
 
 <br><br>
 
@@ -345,4 +346,281 @@ Once this is completed you should be able to add data into the collection and it
 Here in website it shows results,
 
 ![firestore-db-5](images/firestore-db-5.jpg)
+
+## Displaying data from firebase
+
+So lets try display data into the **Home Page**. In the Home.tsx file we can add the following imports. 
+
+```javascript
+import { getDocs, collection } from "firebase/firestore"
+import { db } from '../../config/firebase'
+import { useEffect, useState } from 'react';
+import { Post } from "./Post";
+```
+
+And since this is TypeScript we have to make interfaces to pass into certain methods and for components.
+
+```javascript
+export interface Post {
+    id: string;
+    userid: string;
+    title: string;
+    username: string;
+    description: string;
+}
+```
+
+The `Home` function should look like this,
+
+```javascript
+export const Home = () => {
+
+    const postRef = collection(db, "posts");
+    const [postsList, setPostsList] = useState<Post[] | null>(null)
+
+    const getPost = async () => {
+        const data = await getDocs(postRef);
+        setPostsList(data.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as Post[]);
+    }
+    useEffect(() => {
+        getPost();
+
+    }, [])
+    return (
+        <div>
+            {postsList?.map((post) => (
+                <Post post={post} />
+            ))}
+        </div>
+    )
+}
+```
+In here we are first creating const called `postRef` that reference the database under the collection named "posts". And a state that holds all the posts as an array. 
+
+Then in the `getPost` method retrieving docs from the database and set it to `data` const. By mapping through all the docs (which means reacord on the posts tables), for each dataset we are adding another field id to identify each post for later purposes. And set them to the `postsList`.
+
+Using `useEffect` hook then we runthe `getPost` method when the app renders. Then we map though each post and render `<Post>` component.
+
+The final code in Home.tsx should look like this,
+
+```javascript
+import { getDocs, collection } from "firebase/firestore"
+import { db } from '../../config/firebase'
+import { useEffect, useState } from 'react';
+import { Post } from "./Post";
+
+
+export interface Post {
+    id: string;
+    userid: string;
+    title: string;
+    username: string;
+    description: string;
+}
+
+export const Home = () => {
+
+    const postRef = collection(db, "posts");
+    const [postsList, setPostsList] = useState<Post[] | null>(null)
+
+    const getPost = async () => {
+        const data = await getDocs(postRef);
+        setPostsList(data.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as Post[]);
+    }
+    useEffect(() => {
+        getPost();
+
+    }, [])
+    return (
+        <div>
+            {postsList?.map((post) => (
+                <Post post={post} />
+            ))}
+        </div>
+    )
+}
+```
+Before we move onto the next part we need to create a another collection in [Firestore](https://firebase.google.com/) called likes so that we can implement the liking functionality in the app. For that [refence](#creating-firestore-database) to the part we created posts collecetion and repeat the process for likes collection. Note that we need two columns, postid and userid.
+
+![firestore-db-6](images/firestore-db-6.jpg)
+
+Then we can move on to creating `<Post>` component. Just as usual we create a file called **Post.tsx**, and add the following imports.
+
+```javascript
+import { addDoc, collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth, db } from '../../config/firebase';
+import { Post as aPost } from './Home'
+```
+
+Then we create the interfaces that is required by typescript,
+```javascript
+interface Props {
+    post: aPost;
+}
+
+interface Like {
+    likeid:string;
+    userid: string;
+}
+```
+Then add the following code which will be explained soon,
+
+```javascript
+ export const Post = (props: Props) => {
+    const { post } = props;
+    const likesRef = collection(db, "likes");
+    const [user] = useAuthState(auth);
+    const LikesDoc = query(likesRef, where("postid", "==", post.id))
+    const [likes, setLikes] = useState<Like[] | null>(null);
+    const hasUserLiked = likes?.find((like) => like.userid === user?.uid)
+
+    const getLikes = async () => {
+        const data = await getDocs(LikesDoc)
+        setLikes(data.docs.map((doc) => ({ userid: doc.data().userid, likeid:doc.id})))
+    }
+
+    const addLike = async () => {
+        try {
+            const newDoc = await addDoc(likesRef, { userid: user?.uid, postid: post.id });
+            if (user) {
+                setLikes((prev) => prev ? [...prev, { userid: user.uid, likeid:newDoc.id }] : [{ userid: user.uid, likeid:newDoc.id }])
+            }
+        } catch (err) {
+            console.log(err);
+        }
+       
+    };
+
+    const removeLike = async () => {
+        try {
+            const unlikeQuery = query(likesRef, where("postid", "==", post.id), where("userid", "==", user?.uid));
+            const unlikeData = await getDocs(unlikeQuery);
+            const unlikeid =  unlikeData.docs[0].id;
+            const unlike = doc(db, "likes", unlikeid);
+
+            await deleteDoc(unlike);
+            if (user) {
+                setLikes((prev) => prev && prev.filter((like)=> like.likeid !== unlikeid));
+            }
+        } catch (err) {
+            console.log(err);
+        }
+       
+    };
+
+    
+    useEffect(() => {
+        getLikes();
+    }, [])
+    return (<div>
+        <div>
+            <h1>{post.title}</h1>
+        </div>
+        <div>
+            <p>{post.description}</p>
+        </div>
+        <div>
+            <p>@{post.username}</p>
+            <button onClick={hasUserLiked ? removeLike:addLike }>{hasUserLiked ? <>&#128078;</> : <>&#128077;</>}</button>
+            {likes && <p>Likes: {likes.length}</p>}
+        </div>
+    </div>)
+}
+```
+
+The first we create a const, a object called `post` from the props of the method which are the `Post` interface we made earlier in the **Home.tsx**. `likeRef` is to refence to the collection called "likes", `user` is to identify who is the current user loged in, `LikesDoc` will use `query` function from firestore that query through each row of the `likeRef` collection where 'postid' of the collection is equal to the post id of the current `<Post>` component. The `likes` const is a state which contain a array of `Like` obkects. The `hasUserLiked` const is a boolean that pass true by going through all the likes where the 'userid' of that like equals to current loged in user's 'id'.  
+
+`getLikes` - This function fetches all the likes for a particular post from the Firebase Firestore database. It creates a query using the `collection` and `where` functions, which filters the likes collection to only include likes that correspond to the current post. Then, it calls the `getDocs` function to fetch the documents that match the query. Once the data is retrieved, it is mapped to an array of objects that contain the `userid` of the user who liked the post and the `likeid` of the like document. Finally, the `setLikes` function is called with this array to update the state with the likes for the current post. `useEffect` hook then run the `getLikes` function when the page renders.
+
+`addLike` - This function adds a new like to the likes collection in Firebase Firestore. It first calls the `addDoc` function to add a new document to the likes collection with the `userid` of the currently logged in user and the `postid` of the current post. If the operation is successful, the new like is added to the likes state by calling `setLikes` with the new `likeid` and `userid` data. If the user is not logged in, user will be null and the like will not be added.
+
+`removeLike` - This function removes a like from the likes collection in Firebase Firestore. It first creates a query using the `collection` and `where` functions to filter the likes collection to only include likes that correspond to the current post and were made by the current user. It then calls the `getDocs` function to retrieve the document(s) that match the query. Once the like document is retrieved, it is deleted using the `deleteDoc` function. Finally, the like is removed from the likes state by calling `setLikes` with a new array that does not include the removed like.
+
+At the end we **retuen** the JSX with the title, description and username of the post and a button to like or dislike (if already liked).
+
+The final code should look similar to this, 
+
+```javascript
+import { addDoc, collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth, db } from '../../config/firebase';
+import { Post as aPost } from './Home'
+
+interface Props {
+    post: aPost;
+}
+
+interface Like {
+    likeid:string;
+    userid: string;
+}
+
+export const Post = (props: Props) => {
+    const { post } = props;
+    const likesRef = collection(db, "likes");
+    const [user] = useAuthState(auth);
+    const LikesDoc = query(likesRef, where("postid", "==", post.id))
+    const [likes, setLikes] = useState<Like[] | null>(null);
+    const hasUserLiked = likes?.find((like) => like.userid === user?.uid)
+
+    const getLikes = async () => {
+        const data = await getDocs(LikesDoc)
+        setLikes(data.docs.map((doc) => ({ userid: doc.data().userid, likeid:doc.id})))
+    }
+
+    const addLike = async () => {
+        try {
+            const newDoc = await addDoc(likesRef, { userid: user?.uid, postid: post.id });
+            if (user) {
+                setLikes((prev) => prev ? [...prev, { userid: user.uid, likeid:newDoc.id }] : [{ userid: user.uid, likeid:newDoc.id }])
+            }
+        } catch (err) {
+            console.log(err);
+        }
+       
+    };
+
+    const removeLike = async () => {
+        try {
+            const unlikeQuery = query(likesRef, where("postid", "==", post.id), where("userid", "==", user?.uid));
+            const unlikeData = await getDocs(unlikeQuery);
+            const unlikeid =  unlikeData.docs[0].id;
+            const unlike = doc(db, "likes", unlikeid);
+
+            await deleteDoc(unlike);
+            if (user) {
+                setLikes((prev) => prev && prev.filter((like)=> like.likeid !== unlikeid));
+            }
+        } catch (err) {
+            console.log(err);
+        }
+       
+    };
+
+    
+    useEffect(() => {
+        getLikes();
+    }, [])
+    return (<div>
+        <div>
+            <h1>{post.title}</h1>
+        </div>
+        <div>
+            <p>{post.description}</p>
+        </div>
+        <div>
+            <p>@{post.username}</p>
+            <button onClick={hasUserLiked ? removeLike:addLike }>{hasUserLiked ? <>&#128078;</> : <>&#128077;</>}</button>
+            {likes && <p>Likes: {likes.length}</p>}
+        </div>
+    </div>)
+}
+```
+
+And the final application will look like this. Feel free to add css and style as prefered. 
+
+![final-app](images/firestore-db-7.jpg)
 
